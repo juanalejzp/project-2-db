@@ -3,6 +3,7 @@ from fastapi import APIRouter, HTTPException
 from app.models import UserCreate, User
 from app.models import FineCreate, Fine
 from app.models import Publisher, PublisherCreate
+from app.models import Event, EventCreate
 from app.database import get_db_connection
 from typing import List
 
@@ -139,6 +140,49 @@ def list_publishers():
         cursor.execute(query)
         publishers = cursor.fetchall()
         return [Publisher(**publisher) for publisher in publishers]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cursor.close()
+        conn.close()
+
+@router.post("/events/", response_model=List[Event])
+def create_events_bulk(events: List[EventCreate]):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        created_events = []
+        for event in events:
+            query = """
+            INSERT INTO events (event_name, description, event_date, event_type, capacity)
+            VALUES (%s, %s, %s, %s, %s)
+            """
+            values = (event.event_name, event.description, event.event_date, event.event_type, event.capacity)
+            
+            cursor.execute(query, values)
+            event_id = cursor.lastrowid
+            created_events.append(Event(id=event_id, **event.dict()))
+        
+        conn.commit()
+        return created_events
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cursor.close()
+        conn.close()
+
+@router.get("/events/", response_model=List[Event])
+def list_events():
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    
+    try:
+        query = "SELECT * FROM events"
+        cursor.execute(query)
+        events = cursor.fetchall()
+        return [Event(**event) for event in events]
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     finally:
