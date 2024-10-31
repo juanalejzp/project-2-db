@@ -1,14 +1,31 @@
-# app/models.py
-from pydantic import BaseModel, EmailStr
-from typing import Optional
+# app/schemas.py
 
-class UserCreate(BaseModel):
+from pydantic import BaseModel
+from datetime import date  # Cambiado de datetime a date
+
+class UserBase(BaseModel):
     name: str
     address: str
     phone: str
-    email: EmailStr
-    registration_date: Optional[str]  # Optional, as it might default to current date
+    email: str
+    registration_date: date  # Cambiado de datetime a date
     user_type: str
 
-class User(UserCreate):
+class UserCreate(UserBase):
+    pass
+
+class User(UserBase):
     id: int
+
+    class Config:
+        orm_mode = True
+class FineCreate(BaseModel):
+    user_id: int
+    reason: str
+    start_date: date
+    end_date: date
+    amount: float
+
+class Fine(FineCreate):
+    id: int
+    user_id: int
