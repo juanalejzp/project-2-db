@@ -29,3 +29,17 @@ class FineCreate(BaseModel):
 class Fine(FineCreate):
     id: int
     user_id: int
+
+class PublisherBase(BaseModel):
+    publisher_name: str
+    country: str
+    foundation_year: int
+
+class PublisherCreate(PublisherBase):
+    pass
+
+class Publisher(PublisherBase):
+    id: int
+
+    class Config:
+        orm_mode = True
