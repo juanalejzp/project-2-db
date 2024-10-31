@@ -4,6 +4,7 @@ from app.models import UserCreate, User
 from app.models import FineCreate, Fine
 from app.models import Publisher, PublisherCreate
 from app.models import Event, EventCreate
+from app.models import BookCreate, Book
 from app.database import get_db_connection
 from typing import List
 
@@ -183,6 +184,54 @@ def list_events():
         cursor.execute(query)
         events = cursor.fetchall()
         return [Event(**event) for event in events]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cursor.close()
+        conn.close()
+
+@router.post("/books/", response_model=List[Book])
+def create_books_bulk(books: List[BookCreate]):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        created_books = []
+        for book in books:
+            # Verifica si el publisher_id existe en la tabla `publishers`
+            cursor.execute("SELECT id FROM publishers WHERE id = %s", (book.publisher_id,))
+            if not cursor.fetchone():
+                raise HTTPException(status_code=404, detail=f"Publisher with id {book.publisher_id} not found")
+
+            # Inserta el libro
+            query = """
+            INSERT INTO books (title, author, category, publication_year, status, type, publisher_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """
+            values = (book.title, book.author, book.category, book.publication_year, book.status, book.type, book.publisher_id)
+            cursor.execute(query, values)
+            book_id = cursor.lastrowid
+            created_books.append(Book(id=book_id, **book.dict()))
+
+        conn.commit()
+        return created_books
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cursor.close()
+        conn.close()
+
+@router.get("/books/", response_model=List[Book])
+def list_books():
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    try:
+        # Recupera todos los registros de la tabla `books`
+        cursor.execute("SELECT * FROM books")
+        books = cursor.fetchall()
+        return [Book(**book) for book in books]
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     finally:
