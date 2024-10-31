@@ -2,6 +2,7 @@
 from fastapi import APIRouter, HTTPException
 from app.models import UserCreate, User
 from app.models import FineCreate, Fine
+from app.models import Publisher, PublisherCreate
 from app.database import get_db_connection
 from typing import List
 
@@ -95,6 +96,49 @@ def get_all_fines():
         fines = cursor.fetchall()
         
         return [Fine(**fine) for fine in fines]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cursor.close()
+        conn.close()
+
+@router.post("/publishers/", response_model=List[Publisher])
+def create_publishers_bulk(publishers: List[PublisherCreate]):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        created_publishers = []
+        for publisher in publishers:
+            query = """
+            INSERT INTO publishers (publisher_name, country, foundation_year)
+            VALUES (%s, %s, %s)
+            """
+            values = (publisher.publisher_name, publisher.country, publisher.foundation_year)
+            
+            cursor.execute(query, values)
+            publisher_id = cursor.lastrowid
+            created_publishers.append(Publisher(id=publisher_id, **publisher.dict()))
+        
+        conn.commit()
+        return created_publishers
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cursor.close()
+        conn.close()
+
+@router.get("/publishers/", response_model=List[Publisher])
+def list_publishers():
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    
+    try:
+        query = "SELECT * FROM publishers"
+        cursor.execute(query)
+        publishers = cursor.fetchall()
+        return [Publisher(**publisher) for publisher in publishers]
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     finally:
