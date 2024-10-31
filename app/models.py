@@ -43,3 +43,19 @@ class Publisher(PublisherBase):
 
     class Config:
         orm_mode = True
+
+class EventBase(BaseModel):
+    event_name: str
+    description: str
+    event_date: date
+    event_type: str
+    capacity: int
+
+class EventCreate(EventBase):
+    pass
+
+class Event(EventBase):
+    id: int
+
+    class Config:
+        orm_mode = True
