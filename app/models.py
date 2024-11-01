@@ -95,3 +95,14 @@ class Loan(LoanBase):
 
     class Config:
         orm_mode = True
+
+class EventRegistrationCreate(BaseModel):
+    event_id: int
+    user_id: int
+    registration_date: date
+
+class EventRegistration(EventRegistrationCreate):
+    id: int
+
+    class Config:
+        orm_mode = True

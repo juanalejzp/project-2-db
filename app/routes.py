@@ -6,6 +6,7 @@ from app.models import Publisher, PublisherCreate
 from app.models import Event, EventCreate
 from app.models import BookCreate, Book
 from app.models import Loan, LoanCreate
+from app.models import EventRegistration, EventRegistrationCreate
 from app.database import get_db_connection
 from typing import List
 
@@ -290,3 +291,67 @@ def get_loans():
     finally:
         cursor.close()
         conn.close()
+
+@router.post("/event_registrations/", response_model=List[EventRegistration])
+def create_event_registrations_bulk(event_registrations: List[EventRegistrationCreate]):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    created_registrations = []
+    
+    try:
+        for registration in event_registrations:
+            # Verificar que el event_id existe en la tabla events
+            cursor.execute("SELECT COUNT(*) FROM events WHERE id = %s", (registration.event_id,))
+            event_exists = cursor.fetchone()[0]
+            if not event_exists:
+                raise HTTPException(status_code=404, detail=f"Event with id {registration.event_id} not found")
+
+            # Verificar que el user_id existe en la tabla users
+            cursor.execute("SELECT COUNT(*) FROM users WHERE id = %s", (registration.user_id,))
+            user_exists = cursor.fetchone()[0]
+            if not user_exists:
+                raise HTTPException(status_code=404, detail=f"User with id {registration.user_id} not found")
+
+            # Insertar registro en la tabla event_registrations y obtener el ID generado
+            cursor.execute(
+                """
+                INSERT INTO event_registrations (event_id, user_id, registration_date)
+                VALUES (%s, %s, %s)
+                """,
+                (registration.event_id, registration.user_id, registration.registration_date)
+            )
+            conn.commit()
+            
+            # Obtener el ID generado para el registro insertado
+            registration_id = cursor.lastrowid
+            created_registration = EventRegistration(
+                id=registration_id,
+                event_id=registration.event_id,
+                user_id=registration.user_id,
+                registration_date=registration.registration_date
+            )
+            created_registrations.append(created_registration)
+
+        return created_registrations
+
+    except Exception as e:
+        conn.rollback()
+        print(f"Error al crear registros de evento: {e}")
+        raise HTTPException(status_code=500, detail="Error while creating event registrations")
+
+    finally:
+        cursor.close()
+        conn.close()
+
+@router.get("/event_registrations/", response_model=List[EventRegistration])
+def list_event_registrations():
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    query = "SELECT * FROM event_registrations"
+    cursor.execute(query)
+    rows = cursor.fetchall()
+    cursor.close()
+    conn.close()
+
+    return rows
