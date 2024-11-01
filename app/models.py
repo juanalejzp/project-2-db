@@ -77,3 +77,21 @@ class Book(BookBase):
 
     class Config:
         orm_mode = True
+
+class LoanBase(BaseModel):
+    book_id: int
+    user_id: int
+    loan_date: date
+    return_date: date
+    renewals: int
+    status: str
+    librarian_id: int
+
+class LoanCreate(LoanBase):
+    pass
+
+class Loan(LoanBase):
+    id: int
+
+    class Config:
+        orm_mode = True
