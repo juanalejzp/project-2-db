@@ -5,6 +5,7 @@ from app.models import FineCreate, Fine
 from app.models import Publisher, PublisherCreate
 from app.models import Event, EventCreate
 from app.models import BookCreate, Book
+from app.models import Loan, LoanCreate
 from app.database import get_db_connection
 from typing import List
 
@@ -232,6 +233,58 @@ def list_books():
         cursor.execute("SELECT * FROM books")
         books = cursor.fetchall()
         return [Book(**book) for book in books]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cursor.close()
+        conn.close()
+
+@router.post("/loans/", response_model=List[Loan])
+def create_loans_bulk(loans: List[LoanCreate]):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        created_loans = []
+        for loan in loans:
+            # Verifica si el user_id existe en la tabla `users`
+            cursor.execute("SELECT id FROM users WHERE id = %s", (loan.user_id,))
+            if not cursor.fetchone():
+                raise HTTPException(status_code=404, detail=f"User with id {loan.user_id} not found")
+
+            # Verifica si el book_id existe en la tabla `books`
+            cursor.execute("SELECT id FROM books WHERE id = %s", (loan.book_id,))
+            if not cursor.fetchone():
+                raise HTTPException(status_code=404, detail=f"Book with id {loan.book_id} not found")
+
+            # Inserta el préstamo
+            query = """
+            INSERT INTO loans (book_id, user_id, loan_date, return_date, renewals, status, librarian_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """
+            values = (loan.book_id, loan.user_id, loan.loan_date, loan.return_date, loan.renewals, loan.status, loan.librarian_id)
+            cursor.execute(query, values)
+            loan_id = cursor.lastrowid
+            created_loans.append(Loan(id=loan_id, **loan.dict()))
+
+        conn.commit()
+        return created_loans
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cursor.close()
+        conn.close()
+
+@router.get("/loans/", response_model=List[Loan])
+def get_loans():
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    try:
+        cursor.execute("SELECT * FROM loans")
+        loans = cursor.fetchall()
+        return [Loan(**loan) for loan in loans]
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     finally:
