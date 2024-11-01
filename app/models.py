@@ -1,14 +1,12 @@
-# app/schemas.py
-
 from pydantic import BaseModel
-from datetime import date  # Cambiado de datetime a date
+from datetime import date
 
 class UserBase(BaseModel):
     name: str
     address: str
     phone: str
     email: str
-    registration_date: date  # Cambiado de datetime a date
+    registration_date: date
     user_type: str
 
 class UserCreate(UserBase):
@@ -67,7 +65,7 @@ class BookBase(BaseModel):
     publication_year: int
     status: str
     type: str
-    publisher_id: int  # Clave foránea al publisher
+    publisher_id: int
 
 class BookCreate(BookBase):
     pass

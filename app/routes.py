@@ -1,5 +1,4 @@
-# app/routes.py
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from app.models import UserCreate, User
 from app.models import FineCreate, Fine
 from app.models import Publisher, PublisherCreate
@@ -9,6 +8,7 @@ from app.models import Loan, LoanCreate
 from app.models import EventRegistration, EventRegistrationCreate
 from app.database import get_db_connection
 from typing import List
+from datetime import date
 
 router = APIRouter()
 
@@ -61,7 +61,6 @@ def create_fines_bulk(user_id: int, fines: List[FineCreate]):
     cursor = conn.cursor()
     
     try:
-        # Verificar si el usuario existe
         cursor.execute("SELECT * FROM users WHERE id = %s", (user_id,))
         if not cursor.fetchone():
             raise HTTPException(status_code=404, detail="Usuario no encontrado")
@@ -76,7 +75,7 @@ def create_fines_bulk(user_id: int, fines: List[FineCreate]):
             
             cursor.execute(query, values)
             fine_id = cursor.lastrowid
-            # Elimina user_id del diccionario de valores ya que se pasa directamente en la función
+            
             fine_data = fine.dict(exclude={"user_id"})
             created_fines.append(Fine(id=fine_id, user_id=user_id, **fine_data))
         
@@ -95,7 +94,6 @@ def get_all_fines():
     cursor = conn.cursor(dictionary=True)
     
     try:
-        # Obtener todas las multas
         cursor.execute("SELECT * FROM fines")
         fines = cursor.fetchall()
         
@@ -200,12 +198,10 @@ def create_books_bulk(books: List[BookCreate]):
     try:
         created_books = []
         for book in books:
-            # Verifica si el publisher_id existe en la tabla `publishers`
             cursor.execute("SELECT id FROM publishers WHERE id = %s", (book.publisher_id,))
             if not cursor.fetchone():
                 raise HTTPException(status_code=404, detail=f"Publisher with id {book.publisher_id} not found")
 
-            # Inserta el libro
             query = """
             INSERT INTO books (title, author, category, publication_year, status, type, publisher_id)
             VALUES (%s, %s, %s, %s, %s, %s, %s)
@@ -230,7 +226,6 @@ def list_books():
     cursor = conn.cursor(dictionary=True)
 
     try:
-        # Recupera todos los registros de la tabla `books`
         cursor.execute("SELECT * FROM books")
         books = cursor.fetchall()
         return [Book(**book) for book in books]
@@ -248,17 +243,14 @@ def create_loans_bulk(loans: List[LoanCreate]):
     try:
         created_loans = []
         for loan in loans:
-            # Verifica si el user_id existe en la tabla `users`
             cursor.execute("SELECT id FROM users WHERE id = %s", (loan.user_id,))
             if not cursor.fetchone():
                 raise HTTPException(status_code=404, detail=f"User with id {loan.user_id} not found")
 
-            # Verifica si el book_id existe en la tabla `books`
             cursor.execute("SELECT id FROM books WHERE id = %s", (loan.book_id,))
             if not cursor.fetchone():
                 raise HTTPException(status_code=404, detail=f"Book with id {loan.book_id} not found")
 
-            # Inserta el préstamo
             query = """
             INSERT INTO loans (book_id, user_id, loan_date, return_date, renewals, status, librarian_id)
             VALUES (%s, %s, %s, %s, %s, %s, %s)
@@ -300,19 +292,16 @@ def create_event_registrations_bulk(event_registrations: List[EventRegistrationC
     
     try:
         for registration in event_registrations:
-            # Verificar que el event_id existe en la tabla events
             cursor.execute("SELECT COUNT(*) FROM events WHERE id = %s", (registration.event_id,))
             event_exists = cursor.fetchone()[0]
             if not event_exists:
                 raise HTTPException(status_code=404, detail=f"Event with id {registration.event_id} not found")
 
-            # Verificar que el user_id existe en la tabla users
             cursor.execute("SELECT COUNT(*) FROM users WHERE id = %s", (registration.user_id,))
             user_exists = cursor.fetchone()[0]
             if not user_exists:
                 raise HTTPException(status_code=404, detail=f"User with id {registration.user_id} not found")
 
-            # Insertar registro en la tabla event_registrations y obtener el ID generado
             cursor.execute(
                 """
                 INSERT INTO event_registrations (event_id, user_id, registration_date)
@@ -322,7 +311,6 @@ def create_event_registrations_bulk(event_registrations: List[EventRegistrationC
             )
             conn.commit()
             
-            # Obtener el ID generado para el registro insertado
             registration_id = cursor.lastrowid
             created_registration = EventRegistration(
                 id=registration_id,
@@ -355,3 +343,330 @@ def list_event_registrations():
     conn.close()
 
     return rows
+
+@router.get("/users/fines_total")
+def get_fines_total():
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    
+    try:
+        query = """
+        SELECT u.id, u.name, SUM(f.amount) AS total_fines
+        FROM users u
+        LEFT JOIN fines f ON u.id = f.user_id
+        GROUP BY u.id, u.name
+        """
+        cursor.execute(query)
+        result = cursor.fetchall()
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.get("/fines/stats")
+def get_fine_stats():
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    
+    try:
+        query = """
+        SELECT user_id, MAX(amount) AS max_fine, MIN(amount) AS min_fine, AVG(amount) AS avg_fine
+        FROM fines
+        GROUP BY user_id
+        """
+        cursor.execute(query)
+        result = cursor.fetchall()
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.get("/loans/active")
+def get_active_loans():
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    
+    try:
+        query = """
+        SELECT u.id AS user_id, u.name, l.id AS loan_id, l.loan_date, l.return_date
+        FROM users u
+        INNER JOIN loans l ON u.id = l.user_id
+        WHERE l.status = 'active'
+        """
+        cursor.execute(query)
+        result = cursor.fetchall()
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.get("/books/most_loaned")
+def get_most_loaned_book():
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    
+    try:
+        query = """
+        SELECT b.title, COUNT(l.id) AS loan_count
+        FROM books b
+        INNER JOIN loans l ON b.id = l.book_id
+        GROUP BY b.id
+        ORDER BY loan_count DESC
+        LIMIT 1
+        """
+        cursor.execute(query)
+        result = cursor.fetchone()
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.get("/users/multiple_loans")
+def get_users_multiple_loans():
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    
+    try:
+        query = """
+        SELECT u.id, u.name, COUNT(l.id) AS loan_count
+        FROM users u
+        LEFT JOIN loans l ON u.id = l.user_id
+        GROUP BY u.id
+        HAVING loan_count > 5
+        """
+        cursor.execute(query)
+        result = cursor.fetchall()
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.get("/events/registrations_count")
+def get_event_registrations_count():
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    
+    try:
+        query = """
+        SELECT u.id, u.name, COUNT(er.id) AS registration_count
+        FROM users u
+        LEFT JOIN event_registrations er ON u.id = er.user_id
+        GROUP BY u.id
+        """
+        cursor.execute(query)
+        result = cursor.fetchall()
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.get("/publishers/latest_books")
+def get_latest_books_by_publisher():
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    
+    try:
+        query = """
+        SELECT p.publisher_name, b.title, MAX(b.publication_year) AS latest_year
+        FROM publishers p
+        INNER JOIN books b ON p.id = b.publisher_id
+        GROUP BY p.id
+        """
+        cursor.execute(query)
+        result = cursor.fetchall()
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.get("/events/above_average_capacity")
+def get_events_above_avg_capacity():
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    
+    try:
+        query = """
+        SELECT event_name, capacity
+        FROM events
+        WHERE capacity > (SELECT AVG(capacity) FROM events)
+        """
+        cursor.execute(query)
+        result = cursor.fetchall()
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.get("/users/loans_count")
+def get_loans_per_user():
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    
+    try:
+        query = """
+        SELECT u.name, COUNT(l.id) AS loan_count
+        FROM users u
+        LEFT JOIN loans l ON u.id = l.user_id
+        GROUP BY u.name
+        """
+        cursor.execute(query)
+        result = cursor.fetchall()
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.get("/events/min_capacity")
+def get_min_capacity_event():
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    
+    try:
+        query = """
+        SELECT event_name, MIN(capacity) AS min_capacity
+        FROM events
+        """
+        cursor.execute(query)
+        result = cursor.fetchone()
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cursor.close()
+        conn.close()
+
+@router.get("/users/no_fines")
+def get_users_without_fines():
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    
+    try:
+        query = """
+        SELECT u.id, u.name
+        FROM users u
+        LEFT JOIN fines f ON u.id = f.user_id
+        WHERE f.id IS NULL
+        """
+        cursor.execute(query)
+        result = cursor.fetchall()
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.get("/books/category_count")
+def get_book_count_by_category():
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    
+    try:
+        query = """
+        SELECT category, COUNT(id) AS book_count
+        FROM books
+        GROUP BY category
+        """
+        cursor.execute(query)
+        result = cursor.fetchall()
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.get("/loans/by_date")
+def get_loans_by_date(loan_date: date = Query(..., description="Fecha específica para buscar préstamos")):
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    
+    try:
+        query = """
+        SELECT u.id, u.name, l.id AS loan_id, l.loan_date
+        FROM users u
+        INNER JOIN loans l ON u.id = l.user_id
+        WHERE l.loan_date = %s
+        """
+        cursor.execute(query, (loan_date,))
+        result = cursor.fetchall()
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.get("/events/type_count")
+def get_event_count_by_type():
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    
+    try:
+        query = """
+        SELECT event_type, COUNT(id) AS event_count
+        FROM events
+        GROUP BY event_type
+        """
+        cursor.execute(query)
+        result = cursor.fetchall()
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@router.get("/loans/most_renewals")
+def get_user_with_most_renewals():
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    
+    try:
+        query = """
+        SELECT u.id, u.name, SUM(l.renewals) AS total_renewals
+        FROM users u
+        INNER JOIN loans l ON u.id = l.user_id
+        GROUP BY u.id
+        ORDER BY total_renewals DESC
+        LIMIT 1
+        """
+        cursor.execute(query)
+        result = cursor.fetchone()
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cursor.close()
+        conn.close()
